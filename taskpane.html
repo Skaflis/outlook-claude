@@ -342,8 +342,11 @@
     // Preserves context: Person 1, Person 2, Firma 1, Vårt firma, etc.
     // ============================================
 
-    // Our company names (will become "Vårt firma")
-    var OUR_COMPANY = ['chilimobil', 'chili mobil', 'chilimobil as', 'chili'];
+    // Our company names (will become "Vårt firma") — include misspellings and variations
+    var OUR_COMPANY = [
+      'chilimobil as', 'chilimobil', 'chili mobil', 'chillimobil', 'chilli mobil',
+      'chillimobil as', 'chilimobil.no', 'chili', 'chilli'
+    ];
 
     // Partner companies with custom labels
     var PARTNER_COMPANIES = {
@@ -511,8 +514,18 @@
       // --- Pass 9: Passwords / API keys ---
       text = text.replace(/(?:passord|password|api[\-\s]?key|api[\-\s]?nøkkel|hemmelighet|secret|token)[\s:]+\S+/gi, '[nøkkel fjernet]');
 
-      // --- Pass 10: URLs ---
+      // --- Pass 10: URLs (http/https) ---
       text = text.replace(/https?:\/\/[^\s]+/g, '[URL fjernet]');
+
+      // --- Pass 10b: www. domains ---
+      text = text.replace(/www\.[a-zA-Z0-9\-]+\.[a-zA-Z]{2,}[^\s]*/g, '[nettside fjernet]');
+
+      // --- Pass 10c: Bare domain names (something.no, something.com, etc.) ---
+      text = text.replace(/(?<![@\w])\b[a-zA-Z0-9][\w\-]*\.(no|com|net|org|io|co|se|dk|fi|de|uk|eu|app|dev|ai)\b[^\s]*/gi, function(match) {
+        // Don't touch our anonymized domains
+        if (/vårtfirma|vårtmediebyrå|firma\d+\.no/.test(match)) return match;
+        return '[nettside fjernet]';
+      });
 
       // --- Pass 11: Company names (common suffixes: AS, ASA, AB, Ltd, Inc, GmbH, etc.) ---
       text = text.replace(/\b([A-ZÆØÅÜ][a-zæøåéü]+(?:\s+[A-ZÆØÅÜ&]?[a-zæøåéü]*)*)\s+(AS|ASA|AB|Ltd|Inc|GmbH|AG|SA|Oy|ApS|A\/S|Co|Corp|LLC|BV|NV|SE|Plc)\b/g, function(match, name, suffix) {
@@ -520,12 +533,10 @@
         return getCompanyLabel(full);
       });
 
-      // Also catch "Chilimobil" alone
+      // Also catch company name variations in body text (case-insensitive)
       OUR_COMPANY.forEach(function(c) {
         var re = new RegExp('\\b' + c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
-        text = text.replace(re, function(match) {
-          return getCompanyLabel(match);
-        });
+        text = text.replace(re, function(match) { return getCompanyLabel(match); });
       });
 
       // Catch partner company names in text
