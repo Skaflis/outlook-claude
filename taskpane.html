@@ -177,12 +177,10 @@
       padding: 12px 14px; background: #fff8e6; border: 1px solid #f0d060;
       border-radius: var(--radius-sm); font-size: 12.5px; color: #7a6520; line-height: 1.5;
     }
-
     .privacy-notice {
       padding: 8px 12px; background: #f0f4ff; border: 1px solid #c8d6f0;
       border-radius: var(--radius-sm); font-size: 11px; color: #4a5a7a; line-height: 1.5;
     }
-
     .filter-notice {
       padding: 8px 12px; background: #fff8e6; border: 1px solid #f0d060;
       border-radius: var(--radius-sm); font-size: 11.5px; color: #7a6520; line-height: 1.4;
@@ -190,14 +188,9 @@
     }
     .filter-notice.visible { display: block; }
 
-    /* ---- Debug Panel ---- */
-    .debug-panel {
-      display: none;
-      border-top: 1px solid var(--border);
-      margin-top: 6px;
-    }
+    /* Debug Panel */
+    .debug-panel { display: none; margin-top: 6px; }
     .debug-panel.visible { display: block; }
-
     .debug-toggle {
       display: flex; align-items: center; gap: 6px;
       background: none; border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -208,15 +201,9 @@
     .debug-toggle:hover { background: var(--surface-hover); color: var(--text); }
     .debug-toggle .arrow { transition: transform 0.2s; display: inline-block; }
     .debug-toggle.open .arrow { transform: rotate(90deg); }
-
-    .debug-content {
-      display: none; margin-top: 6px;
-    }
+    .debug-content { display: none; margin-top: 6px; }
     .debug-content.visible { display: block; }
-
-    .debug-section {
-      margin-bottom: 8px;
-    }
+    .debug-section { margin-bottom: 8px; }
     .debug-section-label {
       font-size: 10px; font-weight: 700; text-transform: uppercase;
       letter-spacing: 0.5px; color: var(--accent); margin-bottom: 3px;
@@ -227,8 +214,28 @@
       font-size: 11px; line-height: 1.5; max-height: 200px; overflow-y: auto;
       white-space: pre-wrap; word-wrap: break-word;
     }
-    .debug-box .highlight { color: #e6a855; }
-    .debug-box .removed { color: #f47067; background: rgba(244,112,103,0.1); border-radius: 2px; padding: 0 2px; }
+    .debug-box .anon { color: #7ec8e3; }
+    .debug-box .anon-ours { color: #7ee3a7; }
+    .debug-box .removed { color: #f47067; }
+
+    /* Mapping table */
+    .mapping-table {
+      width: 100%; border-collapse: collapse; font-size: 11px;
+      background: var(--surface); border-radius: var(--radius-sm); overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .mapping-table th {
+      background: var(--bg); padding: 5px 8px; text-align: left;
+      font-weight: 600; color: var(--text-secondary); font-size: 10px;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .mapping-table td {
+      padding: 4px 8px; border-top: 1px solid var(--border);
+      font-family: 'DM Mono', 'Courier New', monospace; font-size: 11px;
+    }
+    .mapping-table .original { color: var(--text-secondary); }
+    .mapping-table .replacement { color: #2a7ab5; font-weight: 500; }
+    .mapping-table .replacement.ours { color: var(--success); }
   </style>
 </head>
 <body>
@@ -249,7 +256,7 @@
     </div>
     <div class="api-status" id="apiStatus"></div>
     <div class="privacy-notice" style="margin-top:10px;">
-      🔒 E-postinnhold sendes kryptert (HTTPS) til Anthropic. API-data lagres maks 30 dager og brukes aldri til trening. Navn, e-poster, telefonnummer og sensitiv info filtreres automatisk bort før sending.
+      🔒 E-postinnhold sendes kryptert (HTTPS) til Anthropic. API-data lagres maks 30 dager og brukes aldri til trening. Personopplysninger anonymiseres automatisk (Person 1, Firma 2 osv.) før sending.
     </div>
   </div>
 
@@ -310,29 +317,41 @@
       </button>
       <div class="debug-content" id="debugContent">
         <div class="debug-section">
+          <div class="debug-section-label">Anonymiseringstabell</div>
+          <div id="debugMapping"></div>
+        </div>
+        <div class="debug-section">
           <div class="debug-section-label">System-prompt</div>
           <div class="debug-box" id="debugSystem"></div>
         </div>
         <div class="debug-section">
-          <div class="debug-section-label">Melding (etter filtrering)</div>
+          <div class="debug-section-label">Melding (etter anonymisering)</div>
           <div class="debug-box" id="debugMessage"></div>
         </div>
       </div>
     </div>
-
   </div>
 
   <script>
     var emailContent = '';
     var emailSubject = '';
     var lastResponse = '';
-    var lastSystemPrompt = '';
-    var lastMessageContent = '';
 
     // ============================================
-    // SENSITIVE DATA FILTER
+    // SMART ANONYMIZER
+    // Preserves context: Person 1, Person 2, Firma 1, Vårt firma, etc.
     // ============================================
-    var commonWords = [
+
+    // Our company names (will become "Vårt firma")
+    var OUR_COMPANY = ['chilimobil', 'chili mobil', 'chilimobil as', 'chili'];
+
+    // Partner companies with custom labels
+    var PARTNER_COMPANIES = {
+      'atyp': 'Vårt mediebyrå'
+    };
+
+    // Words that should NOT be treated as names
+    var SKIP_WORDS = [
       'med', 'vennlig', 'hilsen', 'mvh', 'fra', 'til', 'sendt', 'emne', 'subject',
       'from', 'to', 'sent', 'date', 'dato', 'best', 'regards', 'dear', 'hello', 'hi',
       'hei', 'kjære', 'takk', 'thanks', 'thank', 'you', 'monday', 'tuesday', 'wednesday',
@@ -340,82 +359,239 @@
       'fredag', 'lørdag', 'søndag', 'januar', 'februar', 'mars', 'april', 'mai', 'juni',
       'juli', 'august', 'september', 'oktober', 'november', 'desember', 'january', 'february',
       'march', 'may', 'june', 'july', 'october', 'december', 'mobile', 'mobil',
-      'telefon', 'phone', 'fax', 'web', 'www', 'http', 'https', 'the', 'and', 'for',
-      'this', 'that', 'with', 'our', 'your', 'their', 'will', 'can', 'has', 'have',
-      'den', 'det', 'dette', 'denne', 'som', 'har', 'kan', 'vil', 'skal', 'var', 'jeg',
-      'du', 'vi', 'de', 'han', 'hun', 'ref', 'vedr', 'ang', 'fyi', 'asap', 'info',
-      'dear', 'please', 'kind', 'kindly', 'sincerely', 'hereby', 'attached',
-      'vedlagt', 'vedlegg', 'attachment', 'les', 'mer', 'more', 'read', 'click', 'klikk',
-      'view', 'vis', 'new', 'ny', 'nytt', 'update', 'oppdatering',
-      're', 'sv', 'fwd', 'vs', 'ad', 'nb', 'ps', 'cc', 'bcc',
-      'microsoft', 'outlook', 'google', 'apple', 'teams', 'zoom', 'slack',
-      'chilimobil', 'norway', 'norge', 'norwegian'
+      'telefon', 'phone', 'fax', 'web', 'the', 'and', 'for', 'this', 'that', 'with',
+      'our', 'your', 'their', 'will', 'can', 'has', 'have', 'den', 'det', 'dette',
+      'denne', 'som', 'har', 'kan', 'vil', 'skal', 'var', 'jeg', 'du', 'vi', 'de',
+      'han', 'hun', 'ref', 'vedr', 'ang', 'fyi', 'asap', 'info', 'please', 'kind',
+      'kindly', 'sincerely', 'hereby', 'attached', 'vedlagt', 'vedlegg', 'attachment',
+      'les', 'mer', 'more', 'read', 'click', 'klikk', 'view', 'vis', 'new', 'ny',
+      'nytt', 'update', 'oppdatering', 're', 'sv', 'fwd', 'vs', 'ad', 'nb', 'ps',
+      'cc', 'bcc', 'microsoft', 'outlook', 'google', 'apple', 'teams', 'zoom', 'slack',
+      'norge', 'norway', 'norwegian', 'salgs', 'markedssjef', 'daglig', 'leder',
+      'direktør', 'manager', 'director', 'ceo', 'cto', 'cfo', 'head', 'senior',
+      'junior', 'chief', 'officer', 'president', 'vice', 'assistant', 'consultant',
+      'rådgiver', 'seniorrådgiver', 'prosjektleder', 'avdeling', 'department'
     ];
 
-    function isCommonWord(word) {
-      return commonWords.indexOf(word.toLowerCase()) !== -1;
+    function isSkipWord(w) { return SKIP_WORDS.indexOf(w.toLowerCase()) !== -1; }
+
+    function isOurCompany(name) {
+      var lower = name.toLowerCase().trim();
+      return OUR_COMPANY.some(function(c) { return lower === c || lower.indexOf(c) === 0; });
     }
 
-    function sanitizeText(text) {
-      var filtered = [];
+    function smartAnonymize(text) {
+      var personMap = {};    // "Magnus Skaflestad" → "Person 1"
+      var companyMap = {};   // "Motorcenter Norway" → "Firma 1"
+      var emailMap = {};     // "magnus@chili.no" → "person1@vårtfirma.no"
+      var personCount = 0;
+      var companyCount = 0;
+      var mappings = [];     // For debug display
 
-      text = text.replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, function() {
-        filtered.push('e-postadresse'); return '[E-POST FJERNET]';
+      function getPersonLabel(fullName) {
+        var key = fullName.toLowerCase().trim();
+        if (personMap[key]) return personMap[key];
+        personCount++;
+        var label = 'Person ' + personCount;
+        personMap[key] = label;
+        mappings.push({ original: fullName, replacement: label, type: 'person' });
+        return label;
+      }
+
+      function getCompanyLabel(name) {
+        if (isOurCompany(name)) {
+          var key = name.toLowerCase().trim();
+          if (!companyMap[key]) {
+            companyMap[key] = 'Vårt firma';
+            mappings.push({ original: name, replacement: 'Vårt firma', type: 'ours' });
+          }
+          return 'Vårt firma';
+        }
+        var key = name.toLowerCase().trim();
+        if (companyMap[key]) return companyMap[key];
+        companyCount++;
+        var label = 'Firma ' + companyCount;
+        companyMap[key] = label;
+        mappings.push({ original: name, replacement: label, type: 'company' });
+        return label;
+      }
+
+      // --- Pass 1: Emails (before name detection, since emails contain names) ---
+      var meAssigned = false;    // Track if we've assigned "Meg"
+      var colleagueCount = 0;   // Kollega 1, 2, ...
+
+      text = text.replace(/([a-zA-Z0-9._%+\-]+)@([a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/g, function(match, local, domain) {
+        var domainBase = domain.split('.')[0].toLowerCase();
+
+        // Determine if this is our company email
+        var isOurs = OUR_COMPANY.some(function(c) { return domainBase.indexOf(c) !== -1; });
+
+        // Get or create person label from the local part
+        var nameParts = local.replace(/[._]/g, ' ').trim();
+        var pKey = nameParts.toLowerCase();
+        var pLabel;
+
+        if (personMap[pKey]) {
+          pLabel = personMap[pKey].toLowerCase().replace(/\s+/g, '-');
+        } else if (isOurs && !meAssigned) {
+          // First person from our company = "Meg"
+          meAssigned = true;
+          personMap[pKey] = 'Meg';
+          mappings.push({ original: nameParts, replacement: 'Meg', type: 'me' });
+          pLabel = 'meg';
+        } else if (isOurs) {
+          // Additional people from our company = "Kollega 1, 2..."
+          colleagueCount++;
+          var colLabel = 'Kollega ' + colleagueCount;
+          personMap[pKey] = colLabel;
+          mappings.push({ original: nameParts, replacement: colLabel, type: 'colleague' });
+          pLabel = 'kollega' + colleagueCount;
+        } else {
+          personCount++;
+          pLabel = 'person' + personCount;
+          personMap[pKey] = 'Person ' + personCount;
+          mappings.push({ original: nameParts, replacement: 'Person ' + personCount, type: 'person' });
+        }
+
+        var domainLabel;
+        if (isOurs) {
+          domainLabel = 'vårtfirma.no';
+          if (!companyMap['_ours_']) {
+            companyMap['_ours_'] = 'Vårt firma';
+          }
+        } else if (PARTNER_COMPANIES[domainBase]) {
+          var partnerLabel = PARTNER_COMPANIES[domainBase];
+          domainLabel = partnerLabel.toLowerCase().replace(/\s+/g, '') + '.no';
+          if (!companyMap['_partner_' + domainBase]) {
+            companyMap['_partner_' + domainBase] = partnerLabel;
+            mappings.push({ original: domain, replacement: partnerLabel, type: 'partner' });
+          }
+        } else {
+          var dKey = domainBase;
+          if (companyMap[dKey]) {
+            domainLabel = companyMap[dKey].toLowerCase().replace(/\s+/g, '') + '.no';
+          } else {
+            companyCount++;
+            companyMap[dKey] = 'Firma ' + companyCount;
+            domainLabel = 'firma' + companyCount + '.no';
+            mappings.push({ original: domain, replacement: 'Firma ' + companyCount, type: 'company' });
+          }
+        }
+
+        return pLabel + '@' + domainLabel;
       });
 
+      // --- Pass 2: Phone numbers ---
       text = text.replace(/(?:\+?\d{1,3}[\s\-]?)?\(?\d{2,4}\)?[\s\-]?\d{2,4}[\s\-]?\d{2,5}/g, function(match) {
         var digits = match.replace(/\D/g, '');
         if (digits.length >= 8 && digits.length <= 15) {
-          filtered.push('telefonnummer'); return '[TELEFON FJERNET]';
+          return '[telefon fjernet]';
         }
         return match;
       });
 
-      text = text.replace(/\b(\d{2}[\.\s]?\d{2}[\.\s]?\d{2}[\.\s]?\d{5})\b/g, function() {
-        filtered.push('fødselsnummer'); return '[PERSONNUMMER FJERNET]';
+      // --- Pass 3: Norwegian fødselsnummer (11 digits) ---
+      text = text.replace(/\b(\d{2}[\.\s]?\d{2}[\.\s]?\d{2}[\.\s]?\d{5})\b/g, '[personnr fjernet]');
+
+      // --- Pass 4: Bank accounts ---
+      text = text.replace(/\b(\d{4}[\.\s]\d{2}[\.\s]\d{5})\b/g, '[kontonr fjernet]');
+
+      // --- Pass 5: Credit cards ---
+      text = text.replace(/\b(\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{1,7})\b/g, '[kortnr fjernet]');
+
+      // --- Pass 6: IBAN ---
+      text = text.replace(/\b([A-Z]{2}\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{0,4}\s?\d{0,2})\b/g, '[IBAN fjernet]');
+
+      // --- Pass 7: Org number ---
+      text = text.replace(/(?:org\.?\s*(?:nr|nummer|no)?\.?\s*:?\s*)(\d{3}\s?\d{3}\s?\d{3})\b/gi, '[org.nr fjernet]');
+
+      // --- Pass 8: IP addresses ---
+      text = text.replace(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g, '[IP fjernet]');
+
+      // --- Pass 9: Passwords / API keys ---
+      text = text.replace(/(?:passord|password|api[\-\s]?key|api[\-\s]?nøkkel|hemmelighet|secret|token)[\s:]+\S+/gi, '[nøkkel fjernet]');
+
+      // --- Pass 10: URLs ---
+      text = text.replace(/https?:\/\/[^\s]+/g, '[URL fjernet]');
+
+      // --- Pass 11: Company names (common suffixes: AS, ASA, AB, Ltd, Inc, GmbH, etc.) ---
+      text = text.replace(/\b([A-ZÆØÅÜ][a-zæøåéü]+(?:\s+[A-ZÆØÅÜ&]?[a-zæøåéü]*)*)\s+(AS|ASA|AB|Ltd|Inc|GmbH|AG|SA|Oy|ApS|A\/S|Co|Corp|LLC|BV|NV|SE|Plc)\b/g, function(match, name, suffix) {
+        var full = name + ' ' + suffix;
+        return getCompanyLabel(full);
       });
 
-      text = text.replace(/(?:org\.?\s*(?:nr|nummer|no)?\.?\s*:?\s*)(\d{3}\s?\d{3}\s?\d{3})\b/gi, function() {
-        filtered.push('organisasjonsnummer'); return '[ORG.NR FJERNET]';
+      // Also catch "Chilimobil" alone
+      OUR_COMPANY.forEach(function(c) {
+        var re = new RegExp('\\b' + c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+        text = text.replace(re, function(match) {
+          return getCompanyLabel(match);
+        });
       });
 
-      text = text.replace(/\b(\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{1,7})\b/g, function() {
-        filtered.push('kortnummer'); return '[KORTNUMMER FJERNET]';
+      // Catch partner company names in text
+      Object.keys(PARTNER_COMPANIES).forEach(function(key) {
+        var re = new RegExp('\\b' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+        text = text.replace(re, function(match) {
+          var label = PARTNER_COMPANIES[key];
+          if (!companyMap['_partner_' + key]) {
+            companyMap['_partner_' + key] = label;
+            mappings.push({ original: match, replacement: label, type: 'partner' });
+          }
+          return label;
+        });
       });
 
-      text = text.replace(/\b(\d{4}[\.\s]\d{2}[\.\s]\d{5})\b/g, function() {
-        filtered.push('kontonummer'); return '[KONTONUMMER FJERNET]';
-      });
-
-      text = text.replace(/\b([A-Z]{2}\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{0,4}\s?\d{0,2})\b/g, function() {
-        filtered.push('IBAN'); return '[IBAN FJERNET]';
-      });
-
-      text = text.replace(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g, function() {
-        filtered.push('IP-adresse'); return '[IP FJERNET]';
-      });
-
-      text = text.replace(/(?:passord|password|api[\-\s]?key|api[\-\s]?nøkkel|hemmelighet|secret|token)[\s:]+\S+/gi, function() {
-        filtered.push('passord/nøkkel'); return '[SENSITIV NØKKEL FJERNET]';
-      });
-
-      text = text.replace(/https?:\/\/[^\s]+/g, function() {
-        filtered.push('URL'); return '[URL FJERNET]';
-      });
-
+      // --- Pass 12: Names (Firstname Lastname patterns) ---
       text = text.replace(/\b([A-ZÆØÅÜ][a-zæøåéü]+(?:\s+[A-ZÆØÅÜ][a-zæøåéü]+){1,3})\b/g, function(match) {
         var words = match.split(/\s+/);
-        var allCommon = words.every(function(w) { return isCommonWord(w); });
-        if (allCommon) return match;
-        var hasUncommon = words.some(function(w) { return !isCommonWord(w); });
-        if (hasUncommon && words.length >= 2) {
-          filtered.push('navn'); return '[NAVN FJERNET]';
+        var allSkip = words.every(function(w) { return isSkipWord(w); });
+        if (allSkip) return match;
+        var hasNonSkip = words.some(function(w) { return !isSkipWord(w); });
+        if (hasNonSkip && words.length >= 2) {
+          // Check if any part of this name was already mapped from email
+          var matchKey = match.toLowerCase().trim();
+          if (personMap[matchKey]) return personMap[matchKey];
+
+          // Check partial match (first name or last name alone)
+          var found = null;
+          Object.keys(personMap).forEach(function(key) {
+            if (found) return;
+            var keyParts = key.split(/\s+/);
+            var matchParts = matchKey.split(/\s+/);
+            // Check if names overlap (e.g. "magnus skaflestad" matches "magnus.skaflestad")
+            var overlap = matchParts.some(function(mp) {
+              return keyParts.some(function(kp) { return kp === mp; });
+            });
+            if (overlap) found = personMap[key];
+          });
+          if (found) {
+            personMap[matchKey] = found;
+            return found;
+          }
+
+          return getPersonLabel(match);
         }
         return match;
       });
 
-      var unique = filtered.filter(function(v, i) { return filtered.indexOf(v) === i; });
-      return { text: text, filtered: unique };
+      // Build summary
+      var summary = [];
+      var meEntry = mappings.filter(function(m) { return m.type === 'me'; });
+      var colleagueEntries = mappings.filter(function(m) { return m.type === 'colleague'; });
+      var personEntries = mappings.filter(function(m) { return m.type === 'person'; });
+      var partnerEntries = mappings.filter(function(m) { return m.type === 'partner'; });
+      var companyEntries = mappings.filter(function(m) { return m.type === 'company' || m.type === 'ours'; });
+      if (meEntry.length > 0) summary.push('meg');
+      if (colleagueEntries.length > 0) summary.push(colleagueEntries.length + ' kollega(er)');
+      if (personEntries.length > 0) summary.push(personEntries.length + ' ekstern(e) person(er)');
+      if (partnerEntries.length > 0) summary.push(partnerEntries.length + ' partnerbyrå(er)');
+      if (companyEntries.length > 0) summary.push(companyEntries.length + ' firma(er)');
+
+      return {
+        text: text,
+        mappings: mappings,
+        summary: summary
+      };
     }
 
     // ============================================
@@ -487,25 +663,39 @@
     // DEBUG PANEL
     // ============================================
     function toggleDebug() {
-      var content = document.getElementById('debugContent');
-      var toggle = document.getElementById('debugToggle');
-      var isOpen = content.classList.contains('visible');
-      content.classList.toggle('visible');
-      toggle.classList.toggle('open');
+      document.getElementById('debugContent').classList.toggle('visible');
+      document.getElementById('debugToggle').classList.toggle('open');
     }
 
-    function updateDebugPanel(systemPrompt, messageContent) {
-      lastSystemPrompt = systemPrompt;
-      lastMessageContent = messageContent;
+    function updateDebugPanel(systemPrompt, messageContent, mappings) {
+      // Build mapping table
+      var tableHtml = '<table class="mapping-table"><tr><th>Original</th><th>Erstattet med</th></tr>';
+      mappings.forEach(function(m) {
+        var cls = (m.type === 'ours' || m.type === 'me' || m.type === 'colleague' || m.type === 'partner') ? 'replacement ours' : 'replacement';
+        tableHtml += '<tr><td class="original">' + escapeHtml(m.original) + '</td>'
+          + '<td class="' + cls + '">' + escapeHtml(m.replacement) + '</td></tr>';
+      });
+      tableHtml += '</table>';
 
-      // Highlight [FJERNET] tags in the message
-      var highlightedMessage = escapeHtml(messageContent).replace(
-        /\[(.*?FJERNET)\]/g,
-        '<span class="removed">[$1]</span>'
-      );
+      if (mappings.length === 0) {
+        tableHtml = '<div style="font-size:11px;color:var(--text-secondary);padding:4px 0;">Ingen persondata funnet å anonymisere.</div>';
+      }
 
+      document.getElementById('debugMapping').innerHTML = tableHtml;
       document.getElementById('debugSystem').textContent = systemPrompt;
-      document.getElementById('debugMessage').innerHTML = highlightedMessage;
+
+      // Highlight anonymized parts in message
+      var highlighted = escapeHtml(messageContent)
+        .replace(/Vårt firma/g, '<span class="anon-ours">Vårt firma</span>')
+        .replace(/Vårt mediebyrå/g, '<span class="anon-ours">Vårt mediebyrå</span>')
+        .replace(/\bMeg\b/g, '<span class="anon-ours">Meg</span>')
+        .replace(/(Kollega \d+|Person \d+|Firma \d+)/g, '<span class="anon">$1</span>')
+        .replace(/(meg@[a-zæøå]+\.no)/g, '<span class="anon-ours">$1</span>')
+        .replace(/(kollega\d+@[a-zæøå]+\.no)/g, '<span class="anon-ours">$1</span>')
+        .replace(/(person\d+@[a-z]+\d*\.no)/g, '<span class="anon">$1</span>')
+        .replace(/\[(.*?fjernet)\]/g, '<span class="removed">[$1]</span>');
+
+      document.getElementById('debugMessage').innerHTML = highlighted;
       document.getElementById('debugPanel').classList.add('visible');
     }
 
@@ -544,26 +734,26 @@
         + '- IKKE inkluder emnelinje eller metadata.\n'
         + '- Hold svarene korte, profesjonelle og klare.\n'
         + '- Start rett på sak med innholdet.\n'
-        + '- Personopplysninger er fjernet fra e-posten ([NAVN FJERNET], [E-POST FJERNET] osv.) av personvernhensyn. Ikke referer til disse plassholderne i svaret.';
+        + '- E-posten er anonymisert: \"Meg\" er brukeren som skriver e-posten. \"Kollega 1/2\" er andre i samme firma. \"Person 1/2\" er eksterne personer. \"Vårt firma\" er brukerens firma, \"Vårt mediebyrå\" er brukerens medie- og markedsføringsbyrå, \"Firma 1/2\" er andre eksterne firmaer. Bruk disse referansene — IKKE bruk ekte navn. Når du skriver svar, skriv det fra \"Meg\" sitt perspektiv.';
 
-      var sanitizedEmail = sanitizeText(emailContent);
-      var sanitizedSubject = sanitizeText(emailSubject);
+      // Anonymize the combined text
+      var combined = emailContent;
+      if (emailSubject) combined = 'Emne: ' + emailSubject + '\n\n' + combined;
 
-      var allFiltered = sanitizedEmail.filtered.concat(sanitizedSubject.filtered);
-      allFiltered = allFiltered.filter(function(v, i) { return allFiltered.indexOf(v) === i; });
+      var result = smartAnonymize(combined);
 
-      if (allFiltered.length > 0) {
+      if (result.summary.length > 0) {
         var notice = document.getElementById('filterNotice');
-        notice.textContent = '🔒 Filtrert bort før sending: ' + allFiltered.join(', ');
+        notice.textContent = '🔒 Anonymisert: ' + result.summary.join(', ');
         notice.classList.add('visible');
       }
 
-      var messageContent = sanitizedEmail.text
-        ? 'Her er e-posten jeg jobber med:\n\nEmne: ' + sanitizedSubject.text + '\n\n' + sanitizedEmail.text + '\n\n---\n\nInstruks: ' + userPrompt
+      var messageContent = result.text
+        ? 'Her er e-posten jeg jobber med:\n\n' + result.text + '\n\n---\n\nInstruks: ' + userPrompt
         : 'Instruks: ' + userPrompt;
 
       // Update debug panel
-      updateDebugPanel(systemPrompt, messageContent);
+      updateDebugPanel(systemPrompt, messageContent, result.mappings);
 
       try {
         var response = await fetch('https://api.anthropic.com/v1/messages', {
