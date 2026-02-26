@@ -236,6 +236,87 @@
     .mapping-table .original { color: var(--text-secondary); }
     .mapping-table .replacement { color: #2a7ab5; font-weight: 500; }
     .mapping-table .replacement.ours { color: var(--success); }
+
+    /* Briefing Panel */
+    .briefing-panel { display: none; flex-direction: column; gap: 10px; }
+    .briefing-panel.visible { display: flex; }
+    .briefing-header {
+      font-size: 13px; font-weight: 600; color: var(--text);
+      padding: 10px 14px; background: var(--accent-light); border-radius: var(--radius);
+      border: 1px solid #f0d0c4;
+    }
+    .briefing-header .emoji { font-size: 15px; margin-right: 6px; }
+    .briefing-summary {
+      font-size: 12px; color: var(--text-secondary); font-weight: 400;
+      margin-top: 4px; line-height: 1.5;
+    }
+    .question-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 14px;
+      box-shadow: var(--shadow-sm);
+    }
+    .question-card.answered { border-color: var(--success); background: var(--success-light); }
+    .question-label {
+      font-size: 12.5px; font-weight: 600; color: var(--text);
+      margin-bottom: 8px; line-height: 1.4;
+    }
+    .question-options { display: flex; flex-wrap: wrap; gap: 6px; }
+    .option-btn {
+      padding: 7px 14px; border: 1.5px solid var(--border); border-radius: 20px;
+      background: var(--surface); color: var(--text); font-family: 'DM Sans', sans-serif;
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: all 0.15s; box-shadow: var(--shadow-sm);
+    }
+    .option-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-light); }
+    .option-btn.selected {
+      border-color: var(--success); background: var(--success-light);
+      color: var(--success); font-weight: 600;
+    }
+    .question-freetext {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--border);
+      border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif;
+      font-size: 12px; resize: vertical; min-height: 50px; margin-top: 6px;
+      background: var(--bg); color: var(--text); outline: none;
+    }
+    .question-freetext:focus { border-color: var(--accent); }
+    .briefing-actions { display: flex; gap: 6px; margin-top: 2px; }
+    .briefing-generate {
+      flex: 1; padding: 10px 16px; border: none; border-radius: var(--radius);
+      background: var(--accent); color: white; font-family: 'DM Sans', sans-serif;
+      font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    }
+    .briefing-generate:hover { background: var(--accent-hover); }
+    .briefing-generate:disabled { opacity: 0.5; cursor: not-allowed; }
+    .briefing-reset {
+      padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); color: var(--text-secondary); font-family: 'DM Sans', sans-serif;
+      font-size: 12.5px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+    }
+    .briefing-reset:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Context questions (open-ended) */
+    .context-divider {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.6px; color: var(--text-secondary); margin-top: 4px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .context-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .context-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 14px;
+      box-shadow: var(--shadow-sm);
+    }
+    .context-card.has-input { border-color: var(--success); background: var(--success-light); }
+    .context-suggestions { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+    .suggestion-chip {
+      padding: 5px 11px; border: 1px dashed var(--border); border-radius: 16px;
+      background: var(--bg); color: var(--text-secondary); font-family: 'DM Sans', sans-serif;
+      font-size: 11.5px; cursor: pointer; transition: all 0.15s;
+    }
+    .suggestion-chip:hover { border-color: var(--accent); color: var(--accent); border-style: solid; }
+    .suggestion-chip.used { border-color: var(--success); color: var(--success); border-style: solid; background: var(--success-light); }
   </style>
 </head>
 <body>
@@ -284,12 +365,27 @@
       </div>
     </div>
 
+    <!-- Briefing Panel (shown after Analyze) -->
+    <div class="briefing-panel" id="briefingPanel">
+      <div class="briefing-header" id="briefingHeader"></div>
+      <div id="briefingQuestions"></div>
+      <div class="briefing-actions">
+        <button class="briefing-reset" onclick="closeBriefing()">✕ Lukk</button>
+        <button class="briefing-generate" id="briefingGenerateBtn" onclick="generateFromBriefing()">✍️ Lag utkast basert på svarene</button>
+      </div>
+    </div>
+
     <div class="prompt-area">
       <div class="section-label">Egen instruks</div>
       <textarea class="prompt-input" id="promptInput" placeholder="F.eks. «Skriv et svar som foreslår et møte neste uke...» (Cmd+Enter for å sende)"></textarea>
-      <button class="send-btn" id="sendBtn" onclick="runCustom()">
-        Send <span style="font-size:15px">→</span>
-      </button>
+      <div style="display:flex;gap:6px;align-self:flex-end;">
+        <button class="send-btn" style="background:var(--surface);color:var(--accent);border:1.5px solid var(--accent);" onclick="runAnalyze()">
+          🧠 Analyser
+        </button>
+        <button class="send-btn" id="sendBtn" onclick="runCustom()">
+          Send <span style="font-size:15px">→</span>
+        </button>
+      </div>
     </div>
 
     <div class="filter-notice" id="filterNotice"></div>
@@ -336,6 +432,8 @@
     var emailContent = '';
     var emailSubject = '';
     var lastResponse = '';
+    var lastMappings = [];  // Store mappings for de-anonymization
+    var userEmail = '';  // Current user's email from Office.js
 
     // ============================================
     // SMART ANONYMIZER
@@ -422,6 +520,15 @@
       // --- Pass 1: Emails (before name detection, since emails contain names) ---
       var meAssigned = false;    // Track if we've assigned "Meg"
       var colleagueCount = 0;   // Kollega 1, 2, ...
+
+      // Pre-seed: if we know the user's email, always map it to "Meg"
+      if (userEmail) {
+        var parts = userEmail.split('@');
+        var meKey = parts[0].replace(/[._]/g, ' ').trim().toLowerCase();
+        personMap[meKey] = 'Meg';
+        mappings.push({ original: userEmail, replacement: 'Meg', type: 'me' });
+        meAssigned = true;
+      }
 
       text = text.replace(/([a-zA-Z0-9._%+\-]+)@([a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/g, function(match, local, domain) {
         var domainBase = domain.split('.')[0].toLowerCase();
@@ -609,7 +716,13 @@
     // OFFICE.JS
     // ============================================
     Office.onReady(function(info) {
-      if (info.host === Office.HostType.Outlook) { loadEmailContent(); }
+      if (info.host === Office.HostType.Outlook) {
+        // Get current user's email so we always map it to "Meg"
+        try {
+          userEmail = (Office.context.mailbox.userProfile.emailAddress || '').toLowerCase();
+        } catch(e) {}
+        loadEmailContent();
+      }
       checkApiKey();
     });
 
@@ -678,6 +791,66 @@
       document.getElementById('debugToggle').classList.toggle('open');
     }
 
+    // ============================================
+    // DE-ANONYMIZE: Map pseudonyms back to first names
+    // ============================================
+    function deAnonymize(text, mappings) {
+      if (!mappings || mappings.length === 0) return text;
+
+      // Build reverse map: "Person 1" → "Trond", "Kollega 1" → "Ole", "Firma 1" → "Motor Center"
+      var reverseMap = [];
+      var seen = {};  // Avoid duplicate reverse mappings
+
+      mappings.forEach(function(m) {
+        var replacement = m.replacement;
+        var original = m.original;
+
+        // Skip if we already have a reverse for this pseudonym
+        if (seen[replacement]) return;
+        seen[replacement] = true;
+
+        if (m.type === 'me' || m.type === 'colleague' || m.type === 'person') {
+          // Extract first name: "magnus skaflestad" → "Magnus", "ole hansen" → "Ole"
+          var firstName = original.split(/[\s._]+/)[0];
+          firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+          reverseMap.push({ from: replacement, to: firstName });
+        } else if (m.type === 'company') {
+          // Restore company name with proper capitalization
+          reverseMap.push({ from: replacement, to: original });
+        } else if (m.type === 'ours') {
+          // "Vårt firma" → proper company name
+          reverseMap.push({ from: replacement, to: original });
+        } else if (m.type === 'partner') {
+          // "Vårt mediebyrå" → proper partner name
+          reverseMap.push({ from: replacement, to: original });
+        }
+      });
+
+      // Sort by length (longest first) to avoid partial replacements
+      reverseMap.sort(function(a, b) { return b.from.length - a.from.length; });
+
+      // Also handle email-style references (meg@vårtfirma.no → skip, just remove)
+      text = text.replace(/\b(meg|kollega\d+|person\d+)@[a-zæøå]+\d*\.no/gi, function(match) {
+        var localPart = match.split('@')[0].toLowerCase();
+        // Find matching person
+        for (var i = 0; i < reverseMap.length; i++) {
+          if (reverseMap[i].from.toLowerCase().replace(/\s+/g, '') === localPart ||
+              reverseMap[i].from.toLowerCase() === localPart) {
+            return reverseMap[i].to;
+          }
+        }
+        return match;
+      });
+
+      // Replace pseudonyms with first names
+      reverseMap.forEach(function(r) {
+        var re = new RegExp('\\b' + r.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g');
+        text = text.replace(re, r.to);
+      });
+
+      return text;
+    }
+
     function updateDebugPanel(systemPrompt, messageContent, mappings) {
       // Build mapping table
       var tableHtml = '<table class="mapping-table"><tr><th>Original</th><th>Erstattet med</th></tr>';
@@ -714,8 +887,280 @@
     // ACTIONS
     // ============================================
     function setButtonsDisabled(disabled) {
-      document.querySelectorAll('.quick-btn').forEach(function(btn) { btn.disabled = disabled; });
-      document.getElementById('sendBtn').disabled = disabled;
+      document.querySelectorAll('.quick-btn, .send-btn').forEach(function(btn) { btn.disabled = disabled; });
+    }
+
+    var briefingData = null;  // Stores parsed questions from analysis
+    var briefingAnswers = {};  // Stores user's answers
+
+    // ============================================
+    // ANALYZE & BRIEFING
+    // ============================================
+    async function runAnalyze() {
+      var apiKey = localStorage.getItem('claude_api_key');
+      if (!apiKey) { showStatus('Legg inn API-nøkkel først (klikk ⚙)', 'error'); return; }
+      if (!emailContent && !emailSubject) { showStatus('Ingen e-post å analysere', 'error'); return; }
+
+      document.getElementById('loading').classList.add('visible');
+      document.getElementById('briefingPanel').classList.remove('visible');
+      document.getElementById('responseArea').classList.remove('visible');
+      setButtonsDisabled(true);
+
+      var combined = emailContent;
+      if (emailSubject) combined = 'Emne: ' + emailSubject + '\n\n' + combined;
+      var result = smartAnonymize(combined);
+      lastMappings = result.mappings;
+
+      if (result.summary.length > 0) {
+        var notice = document.getElementById('filterNotice');
+        notice.textContent = '🔒 Anonymisert: ' + result.summary.join(', ');
+        notice.classList.add('visible');
+      }
+
+      var userContext = document.getElementById('promptInput').value.trim();
+
+      var analyzePrompt = 'Du er en smart e-postassistent. Analyser denne e-posten i to steg:\n\n'
+        + 'STEG 1 — BESLUTNINGSPUNKTER: Identifiser alle konkrete spørsmål, forespørsler og ting avsenderen tar opp som krever et svar eller en avgjørelse. Lag 2-4 klikkbare svaralternativer per punkt.\n\n'
+        + 'STEG 2 — KONTEKSTSPØRSMÅL: Still 2-3 åpne spørsmål som hjelper deg skrive et bedre svar — ting du IKKE kan lese ut fra e-posten, men som påvirker svaret. Eksempler:\n'
+        + '- Bakgrunn og historikk (f.eks. "Har dere hatt mange runder om dette tidligere?")\n'
+        + '- Relasjonen (f.eks. "Er dette en viktig samarbeidspartner?")\n'
+        + '- Tone og stil (f.eks. "Ønsker du en uformell eller formell tone?")\n'
+        + '- Strategi og prioritet (f.eks. "Hva er viktigst for deg her — tid, kvalitet, eller relasjonen?")\n'
+        + '- Begrensninger (f.eks. "Er det noe du vil unngå å love eller forplikte deg til?")\n'
+        + 'Lag smarte forslag basert på hva e-posten handler om. Hvert kontekstspørsmål bør ha 2-3 hurtigvalg PLUSS alltid et fritekstfelt.\n\n'
+        + 'Svar KUN med gyldig JSON i dette formatet (ingen markdown, ingen backticks):\n'
+        + '{\n'
+        + '  "summary": "Kort oppsummering av e-posten i 1-2 setninger",\n'
+        + '  "questions": [\n'
+        + '    {\n'
+        + '      "id": "q1",\n'
+        + '      "question": "Beslutningsspørsmål",\n'
+        + '      "context": "Kort sitat/kontekst fra e-posten",\n'
+        + '      "options": ["Alternativ 1", "Alternativ 2", "Skriv selv"]\n'
+        + '    }\n'
+        + '  ],\n'
+        + '  "context_questions": [\n'
+        + '    {\n'
+        + '      "id": "c1",\n'
+        + '      "question": "Åpent kontekstspørsmål",\n'
+        + '      "placeholder": "Hint om hva slags info som er nyttig...",\n'
+        + '      "suggestions": ["Hurtigvalg 1", "Hurtigvalg 2"]\n'
+        + '    }\n'
+        + '  ]\n'
+        + '}\n\n'
+        + 'E-posten er anonymisert. Bruk de anonymiserte navnene (Person 1, Kollega 1, Vårt firma osv.).\n'
+        + 'Skriv alt på samme språk som e-posten.\n\n'
+        + (userContext ? 'Ekstra kontekst fra brukeren: ' + userContext + '\n\n' : '')
+        + 'Her er e-posten:\n\n' + result.text;
+
+      try {
+        var response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: analyzePrompt }]
+          })
+        });
+
+        if (!response.ok) {
+          var err = await response.json().catch(function() { return {}; });
+          throw new Error(err.error && err.error.message ? err.error.message : 'API-feil: ' + response.status);
+        }
+
+        var data = await response.json();
+        var rawText = data.content
+          .filter(function(b) { return b.type === 'text'; })
+          .map(function(b) { return b.text; })
+          .join('\n')
+          .replace(/```json|```/g, '').trim();
+
+        briefingData = JSON.parse(rawText);
+        briefingAnswers = {};
+        renderBriefing();
+
+      } catch (err) {
+        showStatus('Analyse feilet: ' + err.message, 'error');
+      } finally {
+        document.getElementById('loading').classList.remove('visible');
+        setButtonsDisabled(false);
+      }
+    }
+
+    function renderBriefing() {
+      if (!briefingData) return;
+
+      // De-anonymize the summary for display
+      var summary = deAnonymize(briefingData.summary || '', lastMappings);
+
+      document.getElementById('briefingHeader').innerHTML =
+        '<span class="emoji">🧠</span> Analyse\n'
+        + '<div class="briefing-summary">' + escapeHtml(summary) + '</div>';
+
+      var container = document.getElementById('briefingQuestions');
+      container.innerHTML = '';
+
+      // --- Decision questions ---
+      if (briefingData.questions && briefingData.questions.length > 0) {
+        briefingData.questions.forEach(function(q, idx) {
+          var card = document.createElement('div');
+          card.className = 'question-card';
+          card.id = 'qcard-' + q.id;
+
+          var deAnonQuestion = deAnonymize(q.question, lastMappings);
+          var deAnonContext = q.context ? deAnonymize(q.context, lastMappings) : '';
+
+          var html = '<div class="question-label">' + (idx + 1) + '. ' + escapeHtml(deAnonQuestion) + '</div>';
+          if (deAnonContext) {
+            html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;font-style:italic;">"' + escapeHtml(deAnonContext) + '"</div>';
+          }
+          html += '<div class="question-options">';
+          q.options.forEach(function(opt) {
+            var isWrite = opt.toLowerCase().indexOf('skriv') !== -1 || opt.toLowerCase().indexOf('annet') !== -1;
+            html += '<button class="option-btn" onclick="selectOption(\'' + q.id + '\', this, ' + isWrite + ')">' + escapeHtml(opt) + '</button>';
+          });
+          html += '</div>';
+          html += '<textarea class="question-freetext" id="freetext-' + q.id + '" style="display:none;" placeholder="Skriv ditt svar her..."></textarea>';
+
+          card.innerHTML = html;
+          container.appendChild(card);
+        });
+      }
+
+      // --- Context questions (open-ended) ---
+      if (briefingData.context_questions && briefingData.context_questions.length > 0) {
+        var divider = document.createElement('div');
+        divider.className = 'context-divider';
+        divider.textContent = '💬 Gi meg litt kontekst';
+        container.appendChild(divider);
+
+        briefingData.context_questions.forEach(function(cq) {
+          var card = document.createElement('div');
+          card.className = 'context-card';
+          card.id = 'ccard-' + cq.id;
+
+          var deAnonQ = deAnonymize(cq.question, lastMappings);
+          var deAnonPlaceholder = cq.placeholder ? deAnonymize(cq.placeholder, lastMappings) : 'Skriv her...';
+
+          var html = '<div class="question-label">' + escapeHtml(deAnonQ) + '</div>';
+
+          // Suggestion chips
+          if (cq.suggestions && cq.suggestions.length > 0) {
+            html += '<div class="context-suggestions">';
+            cq.suggestions.forEach(function(sug) {
+              var deAnonSug = deAnonymize(sug, lastMappings);
+              html += '<button class="suggestion-chip" onclick="applySuggestion(\'' + cq.id + '\', this)">' + escapeHtml(deAnonSug) + '</button>';
+            });
+            html += '</div>';
+          }
+
+          html += '<textarea class="question-freetext" id="context-' + cq.id + '" style="display:block;" placeholder="' + escapeHtml(deAnonPlaceholder) + '" oninput="markContextCard(\'' + cq.id + '\')"></textarea>';
+
+          card.innerHTML = html;
+          container.appendChild(card);
+        });
+      }
+
+      document.getElementById('briefingPanel').classList.add('visible');
+    }
+
+    function selectOption(qId, btn, showFreetext) {
+      // Deselect siblings
+      var card = document.getElementById('qcard-' + qId);
+      card.querySelectorAll('.option-btn').forEach(function(b) { b.classList.remove('selected'); });
+      btn.classList.add('selected');
+      card.classList.add('answered');
+
+      var freetext = document.getElementById('freetext-' + qId);
+      if (showFreetext) {
+        freetext.style.display = 'block';
+        freetext.focus();
+        briefingAnswers[qId] = { type: 'freetext', label: btn.textContent };
+      } else {
+        freetext.style.display = 'none';
+        freetext.value = '';
+        briefingAnswers[qId] = { type: 'option', label: btn.textContent };
+      }
+    }
+
+    function closeBriefing() {
+      document.getElementById('briefingPanel').classList.remove('visible');
+      briefingData = null;
+      briefingAnswers = {};
+    }
+
+    function applySuggestion(cId, chip) {
+      var textarea = document.getElementById('context-' + cId);
+      var text = chip.textContent;
+      // Toggle: if already in textarea, remove it; otherwise append
+      if (textarea.value.indexOf(text) !== -1) {
+        textarea.value = textarea.value.replace(text, '').replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').trim();
+        chip.classList.remove('used');
+      } else {
+        textarea.value = textarea.value ? textarea.value + '. ' + text : text;
+        chip.classList.add('used');
+      }
+      markContextCard(cId);
+    }
+
+    function markContextCard(cId) {
+      var card = document.getElementById('ccard-' + cId);
+      var textarea = document.getElementById('context-' + cId);
+      if (textarea.value.trim()) {
+        card.classList.add('has-input');
+      } else {
+        card.classList.remove('has-input');
+      }
+    }
+
+    async function generateFromBriefing() {
+      if (!briefingData) return;
+
+      // Build prompt from decision answers
+      var answerLines = [];
+      briefingData.questions.forEach(function(q) {
+        var answer = briefingAnswers[q.id];
+        if (answer) {
+          var text = answer.label;
+          if (answer.type === 'freetext') {
+            var ft = document.getElementById('freetext-' + q.id).value.trim();
+            if (ft) text = ft;
+          }
+          answerLines.push('- ' + q.question + ' → ' + text);
+        } else {
+          answerLines.push('- ' + q.question + ' → (ikke besvart, bruk ditt beste skjønn)');
+        }
+      });
+
+      // Build context from open-ended answers
+      var contextLines = [];
+      if (briefingData.context_questions) {
+        briefingData.context_questions.forEach(function(cq) {
+          var textarea = document.getElementById('context-' + cq.id);
+          if (textarea && textarea.value.trim()) {
+            contextLines.push('- ' + cq.question + ' → ' + textarea.value.trim());
+          }
+        });
+      }
+
+      var prompt = 'Basert på e-posten, mine beslutninger og konteksten jeg har gitt, skriv et passende svar.\n\n'
+        + 'Mine beslutninger:\n' + answerLines.join('\n');
+
+      if (contextLines.length > 0) {
+        prompt += '\n\nEkstra kontekst:\n' + contextLines.join('\n');
+      }
+
+      prompt += '\n\nSkriv svaret basert på dette. Svar på samme språk som e-posten.';
+
+      // Hide briefing, run normal Claude call
+      document.getElementById('briefingPanel').classList.remove('visible');
+      callClaude(prompt);
     }
 
     function runQuick(prompt) { callClaude(prompt); }
@@ -752,6 +1197,7 @@
       if (emailSubject) combined = 'Emne: ' + emailSubject + '\n\n' + combined;
 
       var result = smartAnonymize(combined);
+      lastMappings = result.mappings;  // Store for de-anonymization
 
       if (result.summary.length > 0) {
         var notice = document.getElementById('filterNotice');
@@ -793,6 +1239,9 @@
           .filter(function(b) { return b.type === 'text'; })
           .map(function(b) { return b.text; })
           .join('\n');
+
+        // De-anonymize: replace "Person 1" → "Trond", "Kollega 1" → "Ole", etc.
+        lastResponse = deAnonymize(lastResponse, lastMappings);
 
         tryInsertIntoEmail(lastResponse);
 
